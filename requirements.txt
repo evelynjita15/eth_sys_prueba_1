@@ -3,4 +3,5 @@ thermosteam
 pandas
 streamlit
 google-generativeai
-graphviz 
+graphviz
+altair<5.0.0
