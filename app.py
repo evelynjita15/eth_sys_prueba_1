@@ -19,7 +19,7 @@ st.markdown("---")
 api_key = st.secrets.get("GEMINI_API_KEY") if st.secrets else None
 if api_key:
     genai.configure(api_key=api_key)
-    modelo_ia = genai.GenerativeModel('gemini-2.5-flash') 
+    modelo_ia = genai.GenerativeModel('gemini-2.5-pro') 
 
 # ==========================================
 # 3. LÓGICA DE SIMULACIÓN (ENCAPSULADA)
