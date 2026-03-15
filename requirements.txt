@@ -4,4 +4,3 @@ pandas
 streamlit
 google-generativeai
 graphviz
-altair<5.0.0
