@@ -19,7 +19,7 @@ st.markdown("---")
 api_key = st.secrets.get("GEMINI_API_KEY") if st.secrets else None
 if api_key:
     genai.configure(api_key=api_key)
-    modelo_ia = genai.GenerativeModel('gemini-2.5-pro') 
+    modelo_ia = genai.GenerativeModel('gemini-2.5-flash') 
 
 # ==========================================
 # 3. LÓGICA DE SIMULACIÓN (ENCAPSULADA)
@@ -42,7 +42,7 @@ def ejecutar_simulacion(flujo_agua, flujo_etanol, temp_mosto, temp_calentador):
     W210.outs[0].T = 85 + 273.15
     W220 = bst.HXutility("W-220", ins=W210-0, outs="Mezcla", T=temp_calentador+273.15)
     V100 = bst.IsenthalpicValve("V-100", ins=W220-0, outs="Mezcla-Bifásica", P=101325)
-    V1 = bst.Flash("V-1", ins=V100-0, outs=("Producto Final", "Vinazas"), P=101325, Q=0) # Nombre de salida ajustado
+    V1 = bst.Flash("V-1", ins=V100-0, outs=("Producto Final", "Vinazas"), P=101325, Q=0)
     W310 = bst.HXutility("W-310", ins=V1-0, outs="Vapor Condensado", T=25 + 273.15)
     P200 = bst.Pump("P-200", ins=V1-1, outs=vinazas_retorno, P=3*101325)
 
@@ -69,7 +69,6 @@ def ejecutar_simulacion(flujo_agua, flujo_etanol, temp_mosto, temp_calentador):
                 "Flujo (kg/h)": round(s.F_mass, 2),
                 "% Etanol": f"{fraccion_etanol:.1%}"
             })
-            # Capturamos datos específicos para los KPIs
             if s.ID == "Producto Final":
                 flujo_producto = s.F_mass
                 pureza_producto = fraccion_etanol
@@ -92,7 +91,7 @@ def ejecutar_simulacion(flujo_agua, flujo_etanol, temp_mosto, temp_calentador):
 
         if abs(calor_kw) > 0.01:
             datos_en.append({"Equipo": u.ID, "Función": tipo, "Energía (kW)": round(calor_kw, 2)})
-            if tipo != "Recuperación": # Solo sumamos la energía externa para el KPI
+            if tipo != "Recuperación": 
                 energia_total_kw += abs(calor_kw)
 
     df_en = pd.DataFrame(datos_en)
@@ -101,7 +100,6 @@ def ejecutar_simulacion(flujo_agua, flujo_etanol, temp_mosto, temp_calentador):
     diagrama_path = "diagrama.png"
     eth_sys.diagram(file=diagrama_path.replace(".png", ""), format="png")
 
-    # Retornamos también los valores para los KPIs
     return df_mat, df_en, diagrama_path, estado, flujo_producto, pureza_producto, energia_total_kw
 
 # ==========================================
@@ -115,12 +113,11 @@ temp_calentador = st.sidebar.slider("Temp. Calentador W-220 (°C)", 85, 100, 92,
 
 if st.sidebar.button("▶️ Ejecutar Simulación", type="primary"):
     with st.spinner("Calculando balances termodinámicos..."):
-        # Ejecutamos la simulación
         df_mat, df_en, diagrama, estado, f_prod, pureza, e_total = ejecutar_simulacion(
             flujo_agua, flujo_etanol, temp_mosto, temp_calentador
         )
         
-        st.toast(estado) # Notificación sutil de éxito
+        st.toast(estado) 
         
         # --- SECCIÓN 1: KPIs ---
         st.subheader("📊 Indicadores de Rendimiento (KPIs)")
@@ -138,11 +135,10 @@ if st.sidebar.button("▶️ Ejecutar Simulación", type="primary"):
         )
         kpi3.metric(
             label="Demanda Energética Externa", 
-            value=f"{e_total:.1f} kW",
-            help="Suma de las necesidades de calentamiento y enfriamiento externo."
+            value=f"{e_total:.1f} kW"
         )
         
-        st.markdown("<br>", unsafe_allow_html=True) # Espaciado
+        st.markdown("<br>", unsafe_allow_html=True) 
 
         # --- SECCIÓN 2: TABLAS SIDE-BY-SIDE ---
         col_mat, col_en = st.columns(2)
@@ -158,7 +154,7 @@ if st.sidebar.button("▶️ Ejecutar Simulación", type="primary"):
         st.markdown("---")
         
         # --- SECCIÓN 3: PFD Y TUTOR IA ---
-        col_diagrama, col_ia = st.columns([1.2, 1]) # La columna del diagrama es un poco más ancha
+        col_diagrama, col_ia = st.columns([1.2, 1]) 
         
         with col_diagrama:
             st.subheader("🗺️ Diagrama de Flujo (PFD)")
@@ -177,7 +173,6 @@ if st.sidebar.button("▶️ Ejecutar Simulación", type="primary"):
                 respuesta = modelo_ia.generate_content(prompt)
                 st.info(respuesta.text)
             else:
-                st.warning("Configura tu GEMINI_API_KEY en Streamlit Secrets (o localmente) para habilitar el tutor con IA.")
+                st.warning("Configura tu GEMINI_API_KEY en Streamlit Secrets para habilitar el tutor con IA.")
 else:
-    # Pantalla de inicio antes de simular
     st.info("👈 Ajusta los parámetros en el panel lateral y presiona 'Ejecutar Simulación' para comenzar.")
