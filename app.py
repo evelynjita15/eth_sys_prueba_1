@@ -106,7 +106,7 @@ def run_simulation(w_flow, e_flow, t_in, t_w220, p_flash, p_luz, p_vapor, p_agua
     tea.IRR = 0.15
     precio_sug = tea.solve_price(producto)
 
-    return sys, prod_unit, npv_actual, roi_actual, pbp_actual, costo_prod, precio_sug
+    return sys, W310, npv_actual, roi_actual, pbp_actual, costo_prod, precio_sug
 
 def generar_tablas(sistema):
     datos_mat = []
