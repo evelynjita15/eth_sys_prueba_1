@@ -28,13 +28,22 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Inicialización de variables de sesión para control bidireccional (Punto 16)
+# =================================================================
+# CONTROL DE ESTADO BIDIRECCIONAL (CORRECCIÓN DEL ERROR DE STREAMLIT)
+# =================================================================
 if 't_entrada' not in st.session_state: st.session_state.t_entrada = 25
 if 't_w220' not in st.session_state: st.session_state.t_w220 = 92
 if 'p_sep' not in st.session_state: st.session_state.p_sep = 101325
 if 'chat_history' not in st.session_state: st.session_state.chat_history = []
 if 'sim_history' not in st.session_state: st.session_state.sim_history = pd.DataFrame(columns=["Iteración", "Temp_Mosto", "Temp_W220", "Presion_V100", "NPV", "Costo_Prod"])
 if 'iteracion' not in st.session_state: st.session_state.iteracion = 1
+if 'pending_updates' not in st.session_state: st.session_state.pending_updates = {}
+
+# APLICAR CAMBIOS DE LA IA ANTES DE DIBUJAR LOS SLIDERS
+if st.session_state.pending_updates:
+    for key, value in st.session_state.pending_updates.items():
+        st.session_state[key] = value
+    st.session_state.pending_updates = {} # Limpiar el buzón después de usarlo
 
 # Función para manejar PDFs (Sin mensajes adicionales)
 def manejar_pdf(ruta_archivo):
@@ -144,7 +153,7 @@ st.sidebar.header("🎛️ 1. Parámetros de Operación")
 f_agua = st.sidebar.number_input("Flujo Agua (kg/h)", 500, 2000, 900)
 f_etanol = st.sidebar.number_input("Flujo Etanol (kg/h)", 10, 500, 100)
 
-# Sliders enlazados al session_state para control bidireccional
+# Sliders enlazados al session_state
 st.sidebar.slider("Temp. Alimentación Mosto (°C)", 15, 60, key="t_entrada")
 st.sidebar.slider("Temp. Salida W220 (°C)", 86, 110, key="t_w220")
 st.sidebar.slider("Presión de Separador V100 (Pa)", 10000, 200000, step=5000, key="p_sep")
@@ -160,7 +169,7 @@ p_etanol = st.sidebar.slider("Precio de Venta Etanol ($/kg)", 0.5, 3.0, 1.2, for
 st.sidebar.divider()
 tutor_mode = st.sidebar.checkbox("🤖 Habilitar Modo Tutor IA")
 
-# Ejecución Automática al inicio o al mover parámetros
+# Ejecución Automática
 sys, prod_unit, npv, roi, pbp, costo_prod, precio_sug = run_simulation(
     f_agua, f_etanol, st.session_state.t_entrada, st.session_state.t_w220, st.session_state.p_sep, 
     p_luz, p_vapor, p_agua, p_mosto, p_etanol
@@ -224,7 +233,7 @@ if tutor_mode:
         st.markdown("### 💬 Asistente IA Interactivo")
         st.markdown("Puedes pedirme que analice los datos o que **modifique directamente la Temperatura del Mosto, la Salida W220 o la Presión del Flash**.")
         
-        # Gráfica interactiva de historial (Punto 16)
+        # Gráfica interactiva de historial
         if not st.session_state.sim_history.empty:
             st.markdown("📊 **Evolución del Proyecto por cada cambio de variable**")
             st.line_chart(st.session_state.sim_history.set_index("Iteración")[["NPV", "Costo_Prod"]])
@@ -242,9 +251,8 @@ if tutor_mode:
 
             if "GEMINI_API_KEY" in st.secrets:
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                model = genai.GenerativeModel('gemini-2.5-pro')
+                model = genai.GenerativeModel('gemini-2.5-PRO')
                 
-                # Prompt del sistema oculto para dotar de poderes a la IA
                 system_context = f"""
                 Eres un tutor de ingeniería química. El estado actual de la simulación es: 
                 Temp. Mosto: {st.session_state.t_entrada}°C, Temp. W220: {st.session_state.t_w220}°C, Presión: {st.session_state.p_sep}Pa. 
@@ -259,29 +267,28 @@ if tutor_mode:
                     respuesta = model.generate_content(system_context + "\nUsuario: " + prompt_usuario)
                     texto_respuesta = respuesta.text
                     
-                    # Mostrar mensaje de la IA ocultando los comandos internos
                     texto_limpio = re.sub(r'JSON_INICIO.*?JSON_FIN', '', texto_respuesta, flags=re.DOTALL).strip()
                     st.chat_message("assistant").write(texto_limpio)
                     st.session_state.chat_history.append({"role": "assistant", "content": texto_limpio})
 
-                    # Detectar si la IA decidió modificar los parámetros
+                    # GUARDAR CAMBIOS EN EL BUZÓN (pending_updates) EN LUGAR DE APLICARLOS DIRECTAMENTE
                     json_match = re.search(r'JSON_INICIO\s*(\{.*?\})\s*JSON_FIN', texto_respuesta, re.DOTALL)
                     if json_match:
                         try:
                             nuevos_parametros = json.loads(json_match.group(1))
                             hubo_cambios = False
                             if "t_entrada" in nuevos_parametros:
-                                st.session_state.t_entrada = int(nuevos_parametros["t_entrada"])
+                                st.session_state.pending_updates["t_entrada"] = int(nuevos_parametros["t_entrada"])
                                 hubo_cambios = True
                             if "t_w220" in nuevos_parametros:
-                                st.session_state.t_w220 = int(nuevos_parametros["t_w220"])
+                                st.session_state.pending_updates["t_w220"] = int(nuevos_parametros["t_w220"])
                                 hubo_cambios = True
                             if "p_sep" in nuevos_parametros:
-                                st.session_state.p_sep = int(nuevos_parametros["p_sep"])
+                                st.session_state.pending_updates["p_sep"] = int(nuevos_parametros["p_sep"])
                                 hubo_cambios = True
                                 
                             if hubo_cambios:
-                                st.toast("🔄 El Tutor IA está ajustando los parámetros y re-simulando el proceso...")
+                                st.toast("🔄 El Tutor IA ajustó los parámetros. Re-simulando...")
                                 st.rerun()
                         except json.JSONDecodeError:
                             pass
