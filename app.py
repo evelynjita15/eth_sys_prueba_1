@@ -149,8 +149,8 @@ st.sidebar.divider()
 st.sidebar.header("💰 2. Parámetros Económicos")
 p_luz = st.sidebar.slider("Precio Luz ($/kWh)", 0.01, 0.20, 0.085, format="%.3f")
 p_vapor = st.sidebar.slider("Precio Vapor ($/MJ)", 0.005, 0.100, 0.025, format="%.3f")
-p_agua = st.sidebar.slider("Precio Agua Enf. ($/MJ)", 0.0001, 0.0050, 0.0005, format="%.4f")
-p_mosto = st.sidebar.slider("Costo Mosto ($/kg)", 0.0000001, 0.0001000, 0.0000005, format="%.7f")
+p_agua = st.sidebar.slider("Precio Agua Enf. ($/MJ)", 0.0001, 0.0050, 0.0005, step=0.0001, format="%.4f")
+p_mosto = st.sidebar.slider("Costo Mosto ($/kg)", 0.0000001, 0.0001000, 0.0000005, step=0.0000001, format="%.7f")
 p_etanol = st.sidebar.slider("Precio de Venta Etanol ($/kg)", 0.5, 3.0, 1.2, format="%.2f")
 
 if st.sidebar.button("🚀 Ejecutar Simulación"):
