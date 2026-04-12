@@ -4,8 +4,6 @@ import thermosteam as tmo
 import pandas as pd
 import google.generativeai as genai
 import base64
-import json
-import re
 
 # =================================================================
 # 1. CONFIGURACIÓN DE LA PÁGINA Y ESTILOS
@@ -28,22 +26,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# =================================================================
-# CONTROL DE ESTADO BIDIRECCIONAL (CORRECCIÓN DEL ERROR DE STREAMLIT)
-# =================================================================
-if 't_entrada' not in st.session_state: st.session_state.t_entrada = 25
-if 't_w220' not in st.session_state: st.session_state.t_w220 = 92
-if 'p_sep' not in st.session_state: st.session_state.p_sep = 101325
-if 'chat_history' not in st.session_state: st.session_state.chat_history = []
-if 'sim_history' not in st.session_state: st.session_state.sim_history = pd.DataFrame(columns=["Iteración", "Temp_Mosto", "Temp_W220", "Presion_V100", "NPV", "Costo_Prod"])
-if 'iteracion' not in st.session_state: st.session_state.iteracion = 1
-if 'pending_updates' not in st.session_state: st.session_state.pending_updates = {}
-
-# APLICAR CAMBIOS DE LA IA ANTES DE DIBUJAR LOS SLIDERS
-if st.session_state.pending_updates:
-    for key, value in st.session_state.pending_updates.items():
-        st.session_state[key] = value
-    st.session_state.pending_updates = {} # Limpiar el buzón después de usarlo
+# Inicialización de historial de chat
+if 'chat_history' not in st.session_state: 
+    st.session_state.chat_history = []
 
 # Función para manejar PDFs (Sin mensajes adicionales)
 def manejar_pdf(ruta_archivo):
@@ -153,10 +138,10 @@ st.sidebar.header("🎛️ 1. Parámetros de Operación")
 f_agua = st.sidebar.number_input("Flujo Agua (kg/h)", 500, 2000, 900)
 f_etanol = st.sidebar.number_input("Flujo Etanol (kg/h)", 10, 500, 100)
 
-# Sliders enlazados al session_state
-st.sidebar.slider("Temp. Alimentación Mosto (°C)", 15, 60, key="t_entrada")
-st.sidebar.slider("Temp. Salida W220 (°C)", 86, 110, key="t_w220")
-st.sidebar.slider("Presión de Separador V100 (Pa)", 10000, 200000, step=5000, key="p_sep")
+# Sliders estándar
+t_entrada = st.sidebar.slider("Temp. Alimentación Mosto (°C)", 15, 60, 25)
+t_w220_out = st.sidebar.slider("Temp. Salida W220 (°C)", 86, 110, 92)
+p_sep = st.sidebar.slider("Presión de Separador V100 (Pa)", 10000, 200000, 101325, step=5000)
 
 st.sidebar.divider()
 st.sidebar.header("💰 2. Parámetros Económicos")
@@ -171,20 +156,11 @@ tutor_mode = st.sidebar.checkbox("🤖 Habilitar Modo Tutor IA")
 
 # Ejecución Automática
 sys, prod_unit, npv, roi, pbp, costo_prod, precio_sug = run_simulation(
-    f_agua, f_etanol, st.session_state.t_entrada, st.session_state.t_w220, st.session_state.p_sep, 
+    f_agua, f_etanol, t_entrada, t_w220_out, p_sep, 
     p_luz, p_vapor, p_agua, p_mosto, p_etanol
 )
 df_mat, df_en = generar_tablas(sys)
 producto_final = prod_unit.outs[0]
-
-# Actualizar el historial para graficar (Punto 16)
-nueva_data = pd.DataFrame([{
-    "Iteración": st.session_state.iteracion, "Temp_Mosto": st.session_state.t_entrada, 
-    "Temp_W220": st.session_state.t_w220, "Presion_V100": st.session_state.p_sep, 
-    "NPV": npv, "Costo_Prod": costo_prod
-}])
-st.session_state.sim_history = pd.concat([st.session_state.sim_history, nueva_data], ignore_index=True).drop_duplicates(subset=['Temp_Mosto', 'Temp_W220', 'Presion_V100'], keep='last')
-st.session_state.iteracion += 1
 
 # Pestañas Dinámicas
 tabs_titles = ["⚙️ Simulación", "🗂️ DB (ISO)", "📐 PFD (ISO)"]
@@ -231,66 +207,52 @@ with tabs[2]:
 if tutor_mode:
     with tabs[3]:
         st.markdown("### 💬 Asistente IA Interactivo")
-        st.markdown("Puedes pedirme que analice los datos o que **modifique directamente la Temperatura del Mosto, la Salida W220 o la Presión del Flash**.")
-        
-        # Gráfica interactiva de historial
-        if not st.session_state.sim_history.empty:
-            st.markdown("📊 **Evolución del Proyecto por cada cambio de variable**")
-            st.line_chart(st.session_state.sim_history.set_index("Iteración")[["NPV", "Costo_Prod"]])
-            st.divider()
+        st.markdown("Soy tu tutor virtual. Puedes hacerme cualquier pregunta sobre los resultados de la simulación o los indicadores financieros actuales.")
+        st.divider()
 
         # Interfaz de Chat
         for msg in st.session_state.chat_history:
             st.chat_message(msg["role"]).write(msg["content"])
 
-        prompt_usuario = st.chat_input("Ej: Explica el NPV, o 'Sube la temperatura del mosto a 35'")
+        prompt_usuario = st.chat_input("Ej: ¿Por qué el NPV es negativo con estos parámetros?")
         
         if prompt_usuario:
             st.session_state.chat_history.append({"role": "user", "content": prompt_usuario})
             st.chat_message("user").write(prompt_usuario)
 
             if "GEMINI_API_KEY" in st.secrets:
-                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                model = genai.GenerativeModel('gemini-2.5-PRO')
-                
-                system_context = f"""
-                Eres un tutor de ingeniería química. El estado actual de la simulación es: 
-                Temp. Mosto: {st.session_state.t_entrada}°C, Temp. W220: {st.session_state.t_w220}°C, Presión: {st.session_state.p_sep}Pa. 
-                Resultados -> NPV: ${npv:,.0f}, Costo: ${costo_prod:.2f}/kg.
-                
-                INSTRUCCIÓN CRÍTICA (PUNTO 16): Si el usuario te pide modificar la temperatura del mosto, la temperatura del W220 o la presión del separador, DEBES incluir al final de tu respuesta un bloque exacto con las nuevas variables utilizando estas etiquetas:
-                JSON_INICIO {{"t_entrada": 30, "t_w220": 95, "p_sep": 105000}} JSON_FIN
-                Responde en español de forma educativa.
-                """
-                
-                with st.spinner("El Tutor IA está procesando tu solicitud..."):
-                    respuesta = model.generate_content(system_context + "\nUsuario: " + prompt_usuario)
-                    texto_respuesta = respuesta.text
+                try:
+                    # Limpiamos posibles espacios en blanco en la API KEY
+                    api_key = st.secrets["GEMINI_API_KEY"].strip()
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-2.5-pro')
                     
-                    texto_limpio = re.sub(r'JSON_INICIO.*?JSON_FIN', '', texto_respuesta, flags=re.DOTALL).strip()
-                    st.chat_message("assistant").write(texto_limpio)
-                    st.session_state.chat_history.append({"role": "assistant", "content": texto_limpio})
-
-                    # GUARDAR CAMBIOS EN EL BUZÓN (pending_updates) EN LUGAR DE APLICARLOS DIRECTAMENTE
-                    json_match = re.search(r'JSON_INICIO\s*(\{.*?\})\s*JSON_FIN', texto_respuesta, re.DOTALL)
-                    if json_match:
-                        try:
-                            nuevos_parametros = json.loads(json_match.group(1))
-                            hubo_cambios = False
-                            if "t_entrada" in nuevos_parametros:
-                                st.session_state.pending_updates["t_entrada"] = int(nuevos_parametros["t_entrada"])
-                                hubo_cambios = True
-                            if "t_w220" in nuevos_parametros:
-                                st.session_state.pending_updates["t_w220"] = int(nuevos_parametros["t_w220"])
-                                hubo_cambios = True
-                            if "p_sep" in nuevos_parametros:
-                                st.session_state.pending_updates["p_sep"] = int(nuevos_parametros["p_sep"])
-                                hubo_cambios = True
-                                
-                            if hubo_cambios:
-                                st.toast("🔄 El Tutor IA ajustó los parámetros. Re-simulando...")
-                                st.rerun()
-                        except json.JSONDecodeError:
-                            pass
+                    # Contexto del sistema limpio
+                    system_context = f"""
+                    Eres un tutor experto en ingeniería química. El estado actual de la simulación del usuario es:
+                    - Flujo de Agua: {f_agua} kg/h | Flujo Etanol: {f_etanol} kg/h
+                    - Temp. Alimentación Mosto: {t_entrada}°C
+                    - Temp. Salida Intercambiador W220: {t_w220_out}°C
+                    - Presión Separador Flash V100: {p_sep} Pa
+                    
+                    RESULTADOS ECONÓMICOS:
+                    - Costo Real de Producción: ${costo_prod:.2f}/kg
+                    - NPV (Valor Presente Neto): ${npv:,.0f}
+                    - Retorno (Payback): {pbp:.1f} años
+                    - ROI: {roi:.1f}%
+                    
+                    Responde a las preguntas del usuario basándote EXCLUSIVAMENTE en estos parámetros actuales de la simulación. 
+                    Sé didáctico, claro y mantén un formato fácil de leer. Responde en español.
+                    """
+                    
+                    with st.spinner("El Tutor IA está analizando los datos..."):
+                        respuesta = model.generate_content(system_context + "\nPregunta del usuario: " + prompt_usuario)
+                        texto_respuesta = respuesta.text
+                        
+                        st.chat_message("assistant").write(texto_respuesta)
+                        st.session_state.chat_history.append({"role": "assistant", "content": texto_respuesta})
+                
+                except Exception as e:
+                    st.error(f"❌ Error de conexión con la IA: {str(e)}")
             else:
-                st.error("Configura GEMINI_API_KEY en los Secrets de Streamlit para usar el chat.")
+                st.error("⚠️ Configura GEMINI_API_KEY en los Secrets de Streamlit para usar el chat.")
