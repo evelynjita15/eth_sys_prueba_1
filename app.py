@@ -3,15 +3,13 @@ import biosteam as bst
 import thermosteam as tmo
 import pandas as pd
 import google.generativeai as genai
-import base64
-import os
 
 # =================================================================
 # 1. CONFIGURACIÓN DE LA PÁGINA Y ESTILOS
 # =================================================================
 st.set_page_config(page_title="Simulador de Procesos y TEA", layout="wide")
 
-# Estilos CSS (Adaptado al Modo Oscuro para visibilidad perfecta)
+# Estilos CSS adaptados al Modo Oscuro
 st.markdown("""
     <style>
     div[data-testid="metric-container"] { 
@@ -27,24 +25,21 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Función para mostrar PDFs interactivos en Streamlit
-def mostrar_pdf(ruta_archivo):
+# Función corregida: Evita el bloqueo del navegador mostrando solo el botón de descarga
+def manejar_pdf(ruta_archivo):
     try:
         with open(ruta_archivo, "rb") as f:
-            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
-        
-        # Botón de descarga opcional
-        with open(ruta_archivo, "rb") as f:
+            st.success(f"✅ Archivo `{ruta_archivo}` cargado correctamente.")
             st.download_button(
-                label=f"📥 Descargar Plano ISO: {ruta_archivo}",
+                label=f"📥 Descargar y Ver Plano ISO ({ruta_archivo})",
                 data=f,
                 file_name=ruta_archivo,
-                mime="application/pdf"
+                mime="application/pdf",
+                use_container_width=True
             )
+        st.info("💡 **Tip de UI:** Para visualizar el plano directamente aquí en el futuro, exporta tu diagrama de AutoCAD en formato imagen (.png o .jpg).")
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró '{ruta_archivo}'. Sube el PDF al repositorio junto a app.py.")
+        st.error(f"⚠️ No se encontró '{ruta_archivo}'. Asegúrate de que el archivo esté subido en la misma carpeta que app.py en GitHub.")
 
 # =================================================================
 # 2. CLASE DE INGENIERÍA ECONÓMICA (TEA DIDÁCTICO)
@@ -255,8 +250,8 @@ with tab_sim:
 
 with tab_db:
     st.markdown("### 🗂️ Diagrama de Bloques (ISO - AutoCAD Plant 3D)")
-    mostrar_pdf("DB.pdf")
+    manejar_pdf("DB.pdf")
 
 with tab_dfp:
     st.markdown("### 📐 Diagrama de Flujo de Proceso (ISO - AutoCAD Plant 3D)")
-    mostrar_pdf("DFP.pdf")
+    manejar_pdf("DFP.pdf")
