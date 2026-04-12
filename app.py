@@ -8,17 +8,18 @@ import json
 import re
 
 # =================================================================
-# 1. CONFIGURACIÓN DE LA PÁGINA Y ESTILOS (Sin colores gris/negro)
+# 1. CONFIGURACIÓN DE LA PÁGINA Y ESTILOS
 # =================================================================
 st.set_page_config(page_title="Simulador de Procesos y TEA", layout="wide")
 
+# Estilos CSS adaptados a tonos azul marino profundo 
 st.markdown("""
     <style>
     div[data-testid="metric-container"] { 
-        background-color: #0F172A !important; /* Azul marino profundo */
+        background-color: #0F172A !important; 
         padding: 15px !important; 
         border-radius: 10px !important; 
-        border: 1px solid #1E3A8A !important; /* Borde azul brillante */
+        border: 1px solid #1E3A8A !important; 
     }
     div[data-testid="metric-container"] > div, 
     div[data-testid="metric-container"] label {
@@ -35,6 +36,7 @@ if 'chat_history' not in st.session_state: st.session_state.chat_history = []
 if 'sim_history' not in st.session_state: st.session_state.sim_history = pd.DataFrame(columns=["Iteración", "Temp_Mosto", "Temp_W220", "Presion_V100", "NPV", "Costo_Prod"])
 if 'iteracion' not in st.session_state: st.session_state.iteracion = 1
 
+# Función para manejar PDFs (Sin mensajes adicionales)
 def manejar_pdf(ruta_archivo):
     try:
         with open(ruta_archivo, "rb") as f:
@@ -46,7 +48,7 @@ def manejar_pdf(ruta_archivo):
                 use_container_width=True
             )
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró '{ruta_archivo}'. Asegúrate de que el archivo esté subido en la misma carpeta que app.py en GitHub.")
+        st.error(f"⚠️ No se encontró '{ruta_archivo}'. Asegúrate de que el archivo esté subido en la misma carpeta que app.py.")
 
 # =================================================================
 # 2. CLASE DE INGENIERÍA ECONÓMICA (TEA)
@@ -248,6 +250,40 @@ if tutor_mode:
                 Temp. Mosto: {st.session_state.t_entrada}°C, Temp. W220: {st.session_state.t_w220}°C, Presión: {st.session_state.p_sep}Pa. 
                 Resultados -> NPV: ${npv:,.0f}, Costo: ${costo_prod:.2f}/kg.
                 
-                INSTRUCCIÓN CRÍTICA (PUNTO 16): Si el usuario te pide modificar la temperatura del mosto, la temperatura del W220 o la presión del separador, DEBES incluir al final de tu respuesta un bloque JSON exacto con las nuevas variables. 
-                Ejemplo formato: 
-http://googleusercontent.com/immersive_entry_chip/0
+                INSTRUCCIÓN CRÍTICA (PUNTO 16): Si el usuario te pide modificar la temperatura del mosto, la temperatura del W220 o la presión del separador, DEBES incluir al final de tu respuesta un bloque exacto con las nuevas variables utilizando estas etiquetas:
+                JSON_INICIO {{"t_entrada": 30, "t_w220": 95, "p_sep": 105000}} JSON_FIN
+                Responde en español de forma educativa.
+                """
+                
+                with st.spinner("El Tutor IA está procesando tu solicitud..."):
+                    respuesta = model.generate_content(system_context + "\nUsuario: " + prompt_usuario)
+                    texto_respuesta = respuesta.text
+                    
+                    # Mostrar mensaje de la IA ocultando los comandos internos
+                    texto_limpio = re.sub(r'JSON_INICIO.*?JSON_FIN', '', texto_respuesta, flags=re.DOTALL).strip()
+                    st.chat_message("assistant").write(texto_limpio)
+                    st.session_state.chat_history.append({"role": "assistant", "content": texto_limpio})
+
+                    # Detectar si la IA decidió modificar los parámetros
+                    json_match = re.search(r'JSON_INICIO\s*(\{.*?\})\s*JSON_FIN', texto_respuesta, re.DOTALL)
+                    if json_match:
+                        try:
+                            nuevos_parametros = json.loads(json_match.group(1))
+                            hubo_cambios = False
+                            if "t_entrada" in nuevos_parametros:
+                                st.session_state.t_entrada = int(nuevos_parametros["t_entrada"])
+                                hubo_cambios = True
+                            if "t_w220" in nuevos_parametros:
+                                st.session_state.t_w220 = int(nuevos_parametros["t_w220"])
+                                hubo_cambios = True
+                            if "p_sep" in nuevos_parametros:
+                                st.session_state.p_sep = int(nuevos_parametros["p_sep"])
+                                hubo_cambios = True
+                                
+                            if hubo_cambios:
+                                st.toast("🔄 El Tutor IA está ajustando los parámetros y re-simulando el proceso...")
+                                st.rerun()
+                        except json.JSONDecodeError:
+                            pass
+            else:
+                st.error("Configura GEMINI_API_KEY en los Secrets de Streamlit para usar el chat.")
