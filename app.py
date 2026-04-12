@@ -3,18 +3,48 @@ import biosteam as bst
 import thermosteam as tmo
 import pandas as pd
 import google.generativeai as genai
+import base64
+import os
 
 # =================================================================
 # 1. CONFIGURACIÓN DE LA PÁGINA Y ESTILOS
 # =================================================================
 st.set_page_config(page_title="Simulador de Procesos y TEA", layout="wide")
 
+# Estilos CSS (Adaptado al Modo Oscuro para visibilidad perfecta)
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stMetric { background-color: #000000; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    div[data-testid="metric-container"] { 
+        background-color: #1E293B !important; 
+        padding: 15px !important; 
+        border-radius: 10px !important; 
+        border: 1px solid #334155 !important;
+    }
+    div[data-testid="metric-container"] > div, 
+    div[data-testid="metric-container"] label {
+        color: #F8FAFC !important;
+    }
     </style>
     """, unsafe_allow_html=True)
+
+# Función para mostrar PDFs interactivos en Streamlit
+def mostrar_pdf(ruta_archivo):
+    try:
+        with open(ruta_archivo, "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+        
+        # Botón de descarga opcional
+        with open(ruta_archivo, "rb") as f:
+            st.download_button(
+                label=f"📥 Descargar Plano ISO: {ruta_archivo}",
+                data=f,
+                file_name=ruta_archivo,
+                mime="application/pdf"
+            )
+    except FileNotFoundError:
+        st.error(f"⚠️ No se encontró '{ruta_archivo}'. Sube el PDF al repositorio junto a app.py.")
 
 # =================================================================
 # 2. CLASE DE INGENIERÍA ECONÓMICA (TEA DIDÁCTICO)
@@ -47,17 +77,14 @@ class TEA_Didactico(bst.TEA):
 def run_simulation(w_flow, e_flow, t_in, t_w220, p_flash, p_luz, p_vapor, p_agua, p_mosto, p_etanol):
     bst.main_flowsheet.clear()
     
-    # Configuración Termodinámica
     chemicals = tmo.Chemicals(["Water", "Ethanol"])
     bst.settings.set_thermo(chemicals)
 
-    # Definición de Corrientes (Asignando precio inicial a la materia prima)
     mosto = bst.Stream("MOSTO", Water=w_flow, Ethanol=e_flow, units="kg/hr", T=t_in + 273.15, P=101325)
     mosto.price = p_mosto
     
     vinazas_retorno = bst.Stream("Vinazas_Retorno", Water=200, T=95+273.15, P=300000)
 
-    # Selección de Equipos
     P100 = bst.Pump("P100", ins=mosto, P=4*101325)
     W210 = bst.HXprocess("W210", ins=(P100-0, vinazas_retorno), outs=("Mosto_Pre", "Drenaje"), phase0="l", phase1="l")
     W210.outs[0].T = 85 + 273.15
@@ -69,20 +96,17 @@ def run_simulation(w_flow, e_flow, t_in, t_w220, p_flash, p_luz, p_vapor, p_agua
     W310 = bst.HXutility("W310", ins=V1-0, outs="Producto_Final", T=25+273.15)
     P200 = bst.Pump("P200", ins=V1-1, outs=vinazas_retorno, P=3*101325)
 
-    # Precios de Servicios Auxiliares (Utilities)
     bst.PowerUtility.price = p_luz
     vapor = bst.HeatUtility.get_agent("low_pressure_steam")
     vapor.heat_transfer_price = p_vapor
     agua = bst.HeatUtility.get_agent("cooling_water")
     agua.heat_transfer_price = p_agua
 
-    # Simulación
     sys = bst.System("sys_etanol", path=(P100, W210, W220, V100, V1, W310, P200))
     sys.simulate()
 
-    # Evaluación Económica (TEA)
     producto = W310.outs[0]
-    producto.price = p_etanol # Asignamos el precio del slider al producto
+    producto.price = p_etanol 
 
     tea = TEA_Didactico(
         system=sys, IRR=0.15, duration=(2025, 2045), income_tax=0.3,
@@ -93,16 +117,13 @@ def run_simulation(w_flow, e_flow, t_in, t_w220, p_flash, p_luz, p_vapor, p_agua
         finance_fraction=0.0
     )
 
-    # Extraer indicadores con el precio actual del slider
     npv_actual = tea.NPV
-    roi_actual = tea.ROI * 100 # Convertir a porcentaje
+    roi_actual = tea.ROI * 100 
     pbp_actual = tea.PBP
 
-    # Caso A: Costo Real de Producción (Ganancia = 0)
     tea.IRR = 0.0
     costo_prod = tea.solve_price(producto)
 
-    # Caso B: Precio Meta Sugerido (Rendimiento 15%)
     tea.IRR = 0.15
     precio_sug = tea.solve_price(producto)
 
@@ -137,6 +158,7 @@ def generar_tablas(sistema):
 # =================================================================
 st.title("⚙️ Simulador Técnico-Económico de Procesos")
 
+# --- BARRA LATERAL ---
 st.sidebar.header("🎛️ 1. Parámetros de Operación")
 f_agua = st.sidebar.number_input("Flujo Agua (kg/h)", 500, 2000, 900)
 f_etanol = st.sidebar.number_input("Flujo Etanol (kg/h)", 10, 500, 100)
@@ -149,81 +171,92 @@ st.sidebar.divider()
 st.sidebar.header("💰 2. Parámetros Económicos")
 p_luz = st.sidebar.slider("Precio Luz ($/kWh)", 0.01, 0.20, 0.085, format="%.3f")
 p_vapor = st.sidebar.slider("Precio Vapor ($/MJ)", 0.005, 0.100, 0.025, format="%.3f")
-p_agua = st.sidebar.slider("Precio Agua Enf. ($/MJ)", 0.0001, 0.0050, 0.0005, step=0.0001, format="%.4f")
+p_agua = st.sidebar.number_input("Precio Agua Enf. ($/MJ)", min_value=0.0001, max_value=0.0050, value=0.0005, step=0.0001, format="%.4f")
 p_mosto = st.sidebar.number_input("Costo Mosto ($/kg)", min_value=0.0000001, max_value=0.0001000, value=0.0000005, step=0.0000001, format="%.7f")
 p_etanol = st.sidebar.slider("Precio de Venta Etanol ($/kg)", 0.5, 3.0, 1.2, format="%.2f")
 
-if st.sidebar.button("🚀 Ejecutar Simulación"):
-    # Ejecución
-    sys, prod_unit, npv, roi, pbp, costo_prod, precio_sug = run_simulation(
-        f_agua, f_etanol, t_entrada, t_w220_out, p_sep, 
-        p_luz, p_vapor, p_agua, p_mosto, p_etanol
-    )
-    df_mat, df_en = generar_tablas(sys)
-    producto_final = prod_unit.outs[0] # Corriente de salida
-    # --- MÉTRICAS DE LA CORRIENTE DE PRODUCTO ---
-    st.subheader("🧪 Propiedades del Producto Final")
-    t1, t2, t3, t4 = st.columns(4)
-    
-    presion_bar = producto_final.P / 100000
-    temp_c = producto_final.T - 273.15
-    flujo_masa = producto_final.F_mass
-    comp_etanol = (producto_final.imass['Ethanol'] / flujo_masa) * 100 if flujo_masa > 0 else 0
+# --- SISTEMA DE PESTAÑAS ---
+tab_sim, tab_db, tab_dfp = st.tabs(["⚙️ Simulación", "🗂️ Diagrama de Bloques", "📐 Diagrama de Flujo (PFD)"])
 
-    t1.metric("Presión", f"{presion_bar:.2f} bar")
-    t2.metric("Temperatura", f"{temp_c:.1f} °C")
-    t3.metric("Flujo Másico", f"{flujo_masa:.2f} kg/h")
-    t4.metric("Composición (Etanol)", f"{comp_etanol:.1f} %")
+with tab_sim:
+    if st.sidebar.button("🚀 Ejecutar Simulación", type="primary"):
+        sys, prod_unit, npv, roi, pbp, costo_prod, precio_sug = run_simulation(
+            f_agua, f_etanol, t_entrada, t_w220_out, p_sep, 
+            p_luz, p_vapor, p_agua, p_mosto, p_etanol
+        )
+        df_mat, df_en = generar_tablas(sys)
+        producto_final = prod_unit.outs[0] 
 
-    st.divider()
+        # --- MÉTRICAS ---
+        st.subheader("🧪 Propiedades del Producto Final")
+        t1, t2, t3, t4 = st.columns(4)
+        presion_bar = producto_final.P / 100000
+        temp_c = producto_final.T - 273.15
+        flujo_masa = producto_final.F_mass
+        comp_etanol = (producto_final.imass['Ethanol'] / flujo_masa) * 100 if flujo_masa > 0 else 0
 
-    # --- MÉTRICAS ECONÓMICAS (TEA) ---
-    st.subheader("📈 Indicadores Financieros (TEA)")
-    e1, e2, e3, e4, e5 = st.columns(5)
-    
-    e1.metric("Costo Real Producción", f"${costo_prod:.2f} /kg")
-    e2.metric("Precio Venta Sugerido", f"${precio_sug:.2f} /kg")
-    e3.metric("NPV (Valor Presente)", f"${npv:,.0f}")
-    e4.metric("Payback (Retorno)", f"{pbp:.1f} años")
-    e5.metric("ROI", f"{roi:.1f} %")
+        t1.metric("Presión", f"{presion_bar:.2f} bar")
+        t2.metric("Temperatura", f"{temp_c:.1f} °C")
+        t3.metric("Flujo Másico", f"{flujo_masa:.2f} kg/h")
+        t4.metric("Composición (Etanol)", f"{comp_etanol:.1f} %")
 
-    st.divider()
+        st.divider()
 
-    # --- TABLAS DE MATERIA Y ENERGÍA ---
-    col_mat, col_en = st.columns(2)
-    with col_mat:
-        st.markdown("### Balance de Materia")
-        st.dataframe(df_mat, use_container_width=True)
-    with col_en:
-        st.markdown("### Balance de Energía")
-        st.dataframe(df_en, use_container_width=True)
+        st.subheader("📈 Indicadores Financieros (TEA)")
+        e1, e2, e3, e4, e5 = st.columns(5)
+        e1.metric("Costo Real Producción", f"${costo_prod:.2f} /kg")
+        e2.metric("Precio Venta Sugerido", f"${precio_sug:.2f} /kg")
+        e3.metric("NPV (Valor Presente)", f"${npv:,.0f}")
+        e4.metric("Payback (Retorno)", f"{pbp:.1f} años")
+        e5.metric("ROI", f"{roi:.1f} %")
 
-    # --- DIAGRAMA Y ASISTENTE IA ---
-    st.divider()
-    col_pfd, col_ia = st.columns([1, 1])
+        st.divider()
 
-    with col_pfd:
-        st.markdown("### 📐 Diagrama del Proceso")
-        try:
-            sys.diagram(format='png', file='pfd_temp', display=False)
-            st.image('pfd_temp.png')
-        except Exception:
-            st.info("El diagrama requiere Graphviz configurado en el servidor.")
+        # --- TABLAS ---
+        col_mat, col_en = st.columns(2)
+        with col_mat:
+            st.markdown("### Balance de Materia")
+            st.dataframe(df_mat, use_container_width=True)
+        with col_en:
+            st.markdown("### Balance de Energía")
+            st.dataframe(df_en, use_container_width=True)
 
-    with col_ia:
-        st.markdown("### 🤖 Asistente Económico")
-        if "GEMINI_API_KEY" in st.secrets:
-            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            model = genai.GenerativeModel('gemini-2.5-pro')
-            
-            contexto = f"NPV: ${npv:,.0f}, Payback: {pbp:.1f} años, ROI: {roi:.1f}%. Precio de venta actual: ${p_etanol}/kg vs Costo: ${costo_prod:.2f}/kg."
-            prompt = f"Actúa como un gerente financiero de planta. Analiza estos resultados económicos de la simulación y da 2 consejos para mejorar la rentabilidad (sé muy directo y breve): {contexto}"
-            
-            with st.spinner("Analizando finanzas..."):
-                try:
-                    response = model.generate_content(prompt)
-                    st.write(response.text)
-                except Exception:
-                    st.error("Hubo un problema de conexión con la IA.")
-        else:
-            st.info("Configura GEMINI_API_KEY en los Secrets de Streamlit para activar el asistente.")
+        st.divider()
+        
+        # --- IA Y DIAGRAMA LÓGICO ---
+        col_pfd, col_ia = st.columns([1, 1])
+        with col_pfd:
+            st.markdown("### 🔍 Esquema Lógico (BioSTEAM)")
+            try:
+                sys.diagram(format='png', file='pfd_temp', display=False)
+                st.image('pfd_temp.png')
+            except Exception:
+                st.info("Requiere Graphviz configurado en el servidor para generar el esquema de cajas.")
+
+        with col_ia:
+            st.markdown("### 🤖 Asistente Económico")
+            if "GEMINI_API_KEY" in st.secrets:
+                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                model = genai.GenerativeModel('gemini-2.5-pro')
+                
+                contexto = f"NPV: ${npv:,.0f}, Payback: {pbp:.1f} años, ROI: {roi:.1f}%. Precio de venta actual: ${p_etanol}/kg vs Costo: ${costo_prod:.2f}/kg."
+                prompt = f"Actúa como un gerente financiero de planta. Analiza estos resultados económicos de la simulación y da 2 consejos para mejorar la rentabilidad (sé muy directo y breve): {contexto}"
+                
+                with st.spinner("Analizando finanzas..."):
+                    try:
+                        response = model.generate_content(prompt)
+                        st.write(response.text)
+                    except Exception:
+                        st.error("Hubo un problema de conexión con la IA.")
+            else:
+                st.info("Configura GEMINI_API_KEY en los Secrets de Streamlit para activar el asistente.")
+    else:
+        st.info("👈 Ajusta los parámetros en la barra lateral y haz clic en 'Ejecutar Simulación'.")
+
+with tab_db:
+    st.markdown("### 🗂️ Diagrama de Bloques (ISO - AutoCAD Plant 3D)")
+    mostrar_pdf("DB.pdf")
+
+with tab_dfp:
+    st.markdown("### 📐 Diagrama de Flujo de Proceso (ISO - AutoCAD Plant 3D)")
+    mostrar_pdf("DFP.pdf")
