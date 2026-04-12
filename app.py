@@ -160,8 +160,7 @@ if st.sidebar.button("🚀 Ejecutar Simulación"):
         p_luz, p_vapor, p_agua, p_mosto, p_etanol
     )
     df_mat, df_en = generar_tablas(sys)
-    producto_final = sys.units.W310.outs[0] # Corriente de salida
-
+    producto_final = prod_unit.outs[0] # Corriente de salida
     # --- MÉTRICAS DE LA CORRIENTE DE PRODUCTO ---
     st.subheader("🧪 Propiedades del Producto Final")
     t1, t2, t3, t4 = st.columns(4)
