@@ -25,11 +25,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Función corregida: Evita el bloqueo del navegador mostrando solo el botón de descarga
+# Función para manejar PDFs (Modificada: Sin mensajes extra, solo el botón)
 def manejar_pdf(ruta_archivo):
     try:
         with open(ruta_archivo, "rb") as f:
-            st.success(f"✅ Archivo `{ruta_archivo}` cargado correctamente.")
             st.download_button(
                 label=f"📥 Descargar y Ver Plano ISO ({ruta_archivo})",
                 data=f,
@@ -37,7 +36,6 @@ def manejar_pdf(ruta_archivo):
                 mime="application/pdf",
                 use_container_width=True
             )
-        st.info("💡 **Tip de UI:** Para visualizar el plano directamente aquí en el futuro, exporta tu diagrama de AutoCAD en formato imagen (.png o .jpg).")
     except FileNotFoundError:
         st.error(f"⚠️ No se encontró '{ruta_archivo}'. Asegúrate de que el archivo esté subido en la misma carpeta que app.py en GitHub.")
 
